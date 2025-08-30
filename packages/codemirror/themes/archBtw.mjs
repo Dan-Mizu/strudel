@@ -6,18 +6,18 @@
 import { tags as t } from '@lezer/highlight';
 import { createTheme } from './theme-helper.mjs';
 
-const hex = ['rgb(0, 0, 0)', 'rgb(82, 208, 250)', 'rgba(113, 208, 250, .4)', 'rgba(113, 208, 250, .15)'];
+const hex = ['rgb(0, 0, 0)', 'rgb(82, 208, 250)', 'rgba(113, 208, 250, .4)', 'rgba(113, 208, 250, .15)', 'rgba(82, 208, 250, 0.3)'];
 
 export const settings = {
   background: hex[0],
   lineBackground: 'transparent',
   foreground: hex[1],
-  selection: hex[2],
-  selectionMatch: hex[0],
+  selection: hex[4],
+  selectionMatch: hex[4],
   gutterBackground: hex[0],
   gutterForeground: hex[2],
   gutterBorder: 'transparent',
-  lineHighlight: hex[0],
+  lineHighlight: 'transparent',
 };
 
 export default createTheme({
