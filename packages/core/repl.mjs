@@ -5,6 +5,7 @@ import { errorLogger, logger } from './logger.mjs';
 import { setTime } from './time.mjs';
 import { evalScope } from './evaluate.mjs';
 import { register, Pattern, isPattern, silence, stack } from './pattern.mjs';
+import { reset_state } from './impure.mjs';
 
 export function repl({
   defaultOutput,
@@ -52,6 +53,9 @@ export function repl({
     onToggle: (started) => {
       updateState({ started });
       onToggle?.(started);
+      if (!started) {
+        reset_state();
+      }
     },
     setInterval,
     clearInterval,
@@ -74,6 +78,14 @@ export function repl({
     return silence;
   };
 
+  // helper to get a patternified pure value out
+  function unpure(pat) {
+    if (pat._Pattern) {
+      return pat.__pure;
+    }
+    return pat;
+  }
+
   const setPattern = async (pattern, autostart = true) => {
     pattern = editPattern?.(pattern) || pattern;
     await scheduler.setPattern(pattern, autostart);
@@ -85,7 +97,10 @@ export function repl({
   const start = () => scheduler.start();
   const pause = () => scheduler.pause();
   const toggle = () => scheduler.toggle();
-  const setCps = (cps) => scheduler.setCps(cps);
+  const setCps = (cps) => {
+    scheduler.setCps(unpure(cps));
+    return silence;
+  };
 
   /**
    * Changes the global tempo to the given cycles per minute
@@ -97,7 +112,10 @@ export function repl({
    * setcpm(140/4) // =140 bpm in 4/4
    * $: s("bd*4,[- sd]*2").bank('tr707')
    */
-  const setCpm = (cpm) => scheduler.setCps(cpm / 60);
+  const setCpm = (cpm) => {
+    scheduler.setCps(unpure(cpm) / 60);
+    return silence;
+  };
 
   // TODO - not documented as jsdoc examples as the test framework doesn't simulate enough context for `each` and `all`..
 
@@ -138,9 +156,9 @@ export function repl({
         // allows muting a pattern x with x_ or _x
         return silence;
       }
-      if (id === '$') {
+      if (id.includes('$')) {
         // allows adding anonymous patterns with $:
-        id = `$${anonymousIndex}`;
+        id = `${id}${anonymousIndex}`;
         anonymousIndex++;
       }
       pPatterns[id] = this;
@@ -200,7 +218,21 @@ export function repl({
       }
       let { pattern, meta } = await _evaluate(code, transpiler, transpilerOptions);
       if (Object.keys(pPatterns).length) {
-        let patterns = Object.values(pPatterns);
+        let patterns = [];
+        let soloActive = false;
+        for (const [key, value] of Object.entries(pPatterns)) {
+          // handle soloed patterns ex: S$: s("bd!4")
+          const isSolod = key.length > 1 && key.startsWith('S');
+          if (isSolod && soloActive === false) {
+            // first time we see a soloed pattern, clear existing patterns
+            patterns = [];
+            soloActive = true;
+          }
+          if (!soloActive || (soloActive && isSolod)) {
+            const valWithState = value.withState((state) => state.setControls({ id: key }));
+            patterns.push(valWithState);
+          }
+        }
         if (eachTransform) {
           // Explicit lambda so only element (not index and array) are passed
           patterns = patterns.map((x) => eachTransform(x));
@@ -210,13 +242,13 @@ export function repl({
         pattern = eachTransform(pattern);
       }
       if (allTransforms.length) {
-        for (let i in allTransforms) {
-          pattern = allTransforms[i](pattern);
+        for (const transform of allTransforms) {
+          pattern = transform(pattern);
         }
       }
+
       if (!isPattern(pattern)) {
-        const message = `got "${typeof evaluated}" instead of pattern`;
-        throw new Error(message + (typeof evaluated === 'function' ? ', did you forget to call a function?' : '.'));
+        pattern = silence;
       }
       logger(`[eval] code updated`);
       pattern = await setPattern(pattern, autostart);
